@@ -1,5 +1,8 @@
 import { supabase } from './supabaseClient.js';
 
+
+
+
 /* ===========================
    Utils: normalización común
    =========================== */
@@ -88,31 +91,53 @@ function formatFecha(fechaISO) {
   return `${parseInt(dia)} de ${meses[parseInt(mes) - 1]}`;
 }
 
+// === Helpers de grupos (UUID) ===
+async function resolverUsuarioIdPorUsername(username) {
+  if (!username) return null;
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select('id')
+    .eq('username', username)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data.id; // uuid
+}
+
+async function gruposIdsDelUsuarioActual() {
+  const stored = localStorage.getItem('usuario_actual') || null;
+  const myId = await resolverUsuarioIdPorUsername(stored);
+  if (!myId) return [];
+  const { data, error } = await supabase
+    .from('miembros_grupo')
+    .select('grupo_id')
+    .eq('usuario_id', myId);
+  if (error || !data) return [];
+  return data.map(r => r.grupo_id);
+}
+
 /* ==========================================================
    Upsert de tareas de requisitos (por (appointment_id, idx))
    ========================================================== */
 async function upsertRequirementTasks({ appointment, normalizedRequirements }) {
   const { data: { user } } = await supabase.auth.getUser();
-  const usuarioActual = user?.id || localStorage.getItem('usuario_actual'); // UUID
+  const usuarioActual = user?.id || localStorage.getItem('usuario_actual');
   const hoyStr = new Date().toISOString().split('T')[0];
 
   const rows = normalizedRequirements.map((req, idx) => ({
     usuario: usuarioActual,
-description: `${appointment.description} — ${req.text}`,
-    // usa la fecha de la cita si existe; si no, hoy
-due_date: hoyStr, // mantenerlas visibles hoy como recordatorios
+    description: `${appointment.description} — ${req.text}`,
+    due_date: hoyStr,
     is_completed: !!req.checked,
     appointment_id: appointment.id,
-    requirement_index: idx
+    requirement_index: idx,
+    grupo_id: appointment.grupo_id || null // 👈 importante
   }));
 
   const { error } = await supabase
     .from('tasks')
     .upsert(rows, { onConflict: 'appointment_id,requirement_index' });
 
-  if (error) {
-    console.error('❌ Error upsert tareas de requisitos:', error);
-  }
+  if (error) console.error('❌ Error upsert tareas de requisitos:', error);
 }
 
 
@@ -146,39 +171,52 @@ async function deleteRemovedRequirementTasks({ appointmentId, previousReqs, next
 /* ===========================================
    Cargar + render de citas (filtra por UUID)
    =========================================== */
+/* ===========================================
+   Cargar + render de citas (usuario propio + grupos)
+   =========================================== */
 async function cargarCitas(showAll = false) {
-  // 1) Obtén el UID real del usuario autenticado
-const { data: { user } } = await supabase.auth.getUser();
-const uid   = user?.id || null;               // UUID
-const email = user?.email || null;            // email (por si quedan filas viejas)
-const who = [uid, email].filter(Boolean);
-if (!who.length) { /* render vacío y return */ }
+  // 1) Identidad
+  const { data: { user } } = await supabase.auth.getUser();
+  const uid   = user?.id || null;               // UUID
+  const email = user?.email || null;            // email (por compatibilidad)
+  const stored = localStorage.getItem('usuario_actual') || null; // username si lo usas
+  const who = [uid, email, stored].filter(Boolean);
+  if (!who.length) { container.innerHTML = ''; return; }
 
-const { data, error } = await supabase
-  .from('appointments')
-  .select('id, description, date, start_time, end_time, completed, requirements, usuario')
-  .in('usuario', who) // acepta UUID o email
-  .order('completed', { ascending: true })
-  .order('date', { ascending: true })
-  .order('start_time', { ascending: true });
+  // 2) Grupos del usuario
+  const grupos = await gruposIdsDelUsuarioActual();
 
+  // 3) Construir OR: usuario IN (uid/email/username) OR grupo_id IN (mis grupos)
+  const usuarioClauses = who.map(v => `usuario.eq.${v}`).join(',');
+  const orFiltro = grupos.length
+    ? (usuarioClauses ? `${usuarioClauses},grupo_id.in.(${grupos.join(',')})`
+                      : `grupo_id.in.(${grupos.join(',')})`)
+    : (usuarioClauses || 'usuario.eq.__none__');
 
+  // 4) Query
+  let q = supabase
+    .from('appointments')
+    .select('id, description, date, start_time, end_time, completed, requirements, usuario, grupo_id')
+    .order('completed', { ascending: true })
+    .order('date', { ascending: true })
+    .order('start_time', { ascending: true });
+
+  q = q.or(orFiltro);
+
+  const { data, error } = await q;
   if (error) {
     console.error('Error al cargar citas desde Supabase:', error);
     showMessageModal(`Error al cargar citas: ${error.message}`);
     return;
   }
 
-  // 3) Normaliza requisitos
+  // 5) Normaliza requisitos
   citas = (data || []).map(c => ({
     ...c,
     requirements: normalizeRequirements(c.requirements)
   }));
 
-  // (opcional) debug
-  console.log('[CITAS] uid=', uid, 'filas=', citas.length);
-
-  // 4) Pinta
+  // 6) Pinta
   renderCitas(showAll);
 }
 window.cargarCitas = cargarCitas;
@@ -210,35 +248,52 @@ function renderCitas(showAll) {
     if (cita.completed) citaDiv.classList.add('completed-cita-item');
 
     // tiempo restante
-    let tiempoRestante = '';
-    if (!cita.completed && cita.date && cita.start_time) {
-      const [year, month, day] = cita.date.split('-').map(Number);
-      const [hours, minutes] = cita.start_time.split(':').map(Number);
-      const fechaCita = new Date(year, month - 1, day, hours, minutes);
-      const ahora = new Date();
+    // tiempo restante + flags de urgencia
+let tiempoRestante = '';
+let urgente = false; // < 24h
+let critica = false; // < 1h
 
-      const diffMs = fechaCita - ahora;
-      if (diffMs > 0) {
-        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-        const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-        if (diffDays > 0) tiempoRestante = `Faltan ${diffDays}d ${diffHours}h`;
-        else if (diffHours > 0) tiempoRestante = `Faltan ${diffHours}h ${diffMinutes}m`;
-        else tiempoRestante = `Faltan ${diffMinutes}m`;
-      } else {
-        tiempoRestante = 'Pasada';
-        citaDiv.classList.add('completed-cita-item');
-      }
-    } else if (cita.completed) {
-      tiempoRestante = 'Completada';
+if (!cita.completed && cita.date && cita.start_time) {
+  const [year, month, day] = cita.date.split('-').map(Number);
+  const [hours, minutes] = cita.start_time.split(':').map(Number);
+  const fechaCita = new Date(year, month - 1, day, hours, minutes);
+  const ahora = new Date();
+
+  const diffMs = fechaCita - ahora;
+
+  if (diffMs > 0) {
+    urgente = diffMs <= 24 * 60 * 60 * 1000; // 24h
+    critica = diffMs <= 60 * 60 * 1000;      // 1h
+
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (diffDays > 0) {
+      tiempoRestante = `Faltan ${diffDays}d ${diffHours}h`;
+    } else if (diffHours > 0) {
+      tiempoRestante = `Faltan ${diffHours}h ${diffMinutes}m`;
+    } else {
+      tiempoRestante = `Faltan ${diffMinutes}m`;
     }
+  } else {
+    tiempoRestante = 'Pasada';
+  }
+} else if (cita.completed) {
+  tiempoRestante = 'Completada';
+}
 
-    citaDiv.innerHTML = `
-<div class="cita-main-content">
+if (urgente) citaDiv.classList.add('urgente');
+if (critica) citaDiv.classList.add('critica');
+
+   citaDiv.innerHTML = `
+<div class="cita-main-content ${urgente ? 'urgente' : ''} ${critica ? 'critica' : ''}">
   <i class="estado-icono"></i>
   <span class="cita-descripcion">${cita.description}</span>
   <span class="cita-hora">${cita.start_time || ''}${cita.end_time ? ' - ' + cita.end_time : ''}</span>
-  <span class="cita-tiempo-restante">${tiempoRestante}</span>
+  <span class="cita-tiempo-restante ${urgente ? 'urgente' : ''} ${critica ? 'critica' : ''}">
+    ${tiempoRestante}
+  </span>
 
   ${
     (Array.isArray(cita.requirements) && cita.requirements.length > 0)
@@ -257,12 +312,11 @@ function renderCitas(showAll) {
           `).join('')}
         </div>
       </details>
-    `
-      : ''
+    ` : ''
   }
 </div>
 
-<div class="cita-aside-content">
+<div class="cita-aside-content ${urgente ? 'urgente' : ''} ${critica ? 'critica' : ''}">
   <div class="cita-fecha">${formatFecha(cita.date)}</div>
   <div class="cita-actions">
     <button class="btn-action btn-complete ${cita.completed ? 'completed' : ''}" data-id="${cita.id}" data-completed="${cita.completed}">
@@ -280,6 +334,7 @@ function renderCitas(showAll) {
   </div>
 </div>
 `;
+
     container.appendChild(citaDiv);
     citasMostradas++;
   }
@@ -475,10 +530,10 @@ editarFormulario?.addEventListener('submit', async (e) => {
   }
 
   // Upsert de tareas de requisitos (SIEMPRE hoy, texto con prefijo [Cita])
-  await upsertRequirementTasks({
-    appointment: { id, description: updatedDescription },
-    normalizedRequirements: normalizedReqs
-  });
+await upsertRequirementTasks({
+  appointment: { id, description: updatedDescription, grupo_id: data?.grupo_id || null },
+  normalizedRequirements: normalizedReqs
+});
 
   // Borrar las tareas de requisitos eliminados
   await deleteRemovedRequirementTasks({

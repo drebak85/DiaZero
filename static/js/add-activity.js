@@ -54,6 +54,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
   inputNuevoRequisito = document.getElementById('nuevo-requisito-cita');
   btnAñadirRequisito = document.getElementById('btn-añadir-requisito-cita');
+  // === GRUPOS: cargar los del admin y rellenar selects ===
+  
+
+
+
+async function cargarSelectsGrupos() {
+  const username = localStorage.getItem("usuario_actual") || "";
+  const seles = document.querySelectorAll(".select-grupo");
+  if (!seles.length) return;
+
+  // resolver UUID admin
+  const { data: me, error: e1 } = await supabase
+    .from("usuarios")
+    .select("id")
+    .eq("username", username)
+    .maybeSingle();
+
+  if (e1 || !me) {
+    seles.forEach(s => s.innerHTML = `<option value="">— Ninguno —</option>`);
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("grupos")
+    .select("id, nombre")
+    .eq("admin_id", me.id)
+    .order("nombre", { ascending: true });
+
+  const opts = [`<option value="">— Ninguno —</option>`]
+    .concat((data || []).map(g => `<option value="${g.id}">${g.nombre}</option>`))
+    .join("");
+
+  seles.forEach(s => s.innerHTML = opts);
+}
+
+// Rellenar en cuanto se carga la pantalla de “Añadir actividad”
+cargarSelectsGrupos();
+
   contenedorRequisitos = document.getElementById('cita-requisitos-container');
 
   // --------- Supermercado: badge + histórico ----------
@@ -565,8 +603,15 @@ console.log('[DEBUG] dataToSave base:', dataToSave);
         dataToSave.due_date   = document.getElementById('tarea-fecha').value;
         dataToSave.start_time = document.getElementById('tarea-hora-inicio').value;
         dataToSave.end_time   = document.getElementById('tarea-hora-fin').value;
-        const prioridad = document.getElementById('tarea-prioridad').value;
-        dataToSave.priority = prioridad === 'Alta' ? 3 : prioridad === 'Media' ? 2 : 1;
+        // === NUEVO: asignar grupo a tarea ===
+dataToSave.grupo_id = document.querySelector('.select-grupo[data-target="tarea"]')?.value || null;
+
+        const prioridadEl = document.getElementById('tarea-prioridad');
+if (prioridadEl) {
+  const prioridad = prioridadEl.value;
+  dataToSave.priority = prioridad === 'Alta' ? 3 : prioridad === 'Media' ? 2 : 1;
+}
+
         dataToSave.is_completed = false;
 
         const { error } = await supabase.from('tasks').insert([dataToSave]);
@@ -670,6 +715,9 @@ if (tipoSeleccionado === 'Ingrediente') {
       try {
         dataToSave.start_time = document.getElementById('rutina-hora-inicio').value;
         dataToSave.end_time   = document.getElementById('rutina-hora-fin').value;
+        // === NUEVO: asignar grupo a rutina ===
+dataToSave.grupo_id = document.querySelector('.select-grupo[data-target="rutina"]')?.value || null;
+
         dataToSave.days_of_week = Array.from(document.querySelectorAll('input[name="rutina_dia_semana"]:checked')).map(el => el.value);
         dataToSave.is_active  = true;
         dataToSave.date       = document.getElementById('rutina-fecha').value;
@@ -696,6 +744,9 @@ if (tipoSeleccionado === 'Ingrediente') {
         dataToSave.date       = document.getElementById('cita-fecha').value;
         dataToSave.start_time = document.getElementById('cita-hora-inicio').value;
         dataToSave.end_time   = document.getElementById('cita-hora-fin').value;
+        // === NUEVO: asignar grupo a cita ===
+dataToSave.grupo_id = document.querySelector('.select-grupo[data-target="cita"]')?.value || null;
+
 
         const normalizedReqs = normalizeRequirements(requisitosCita);
         dataToSave.requirements = normalizedReqs;
@@ -715,7 +766,10 @@ if (tipoSeleccionado === 'Ingrediente') {
           due_date: hoyStr,
           is_completed: !!req.checked,
           appointment_id: inserted.id,
+          grupo_id: inserted.grupo_id,
+
           requirement_index: idx
+          
         }));
         if (taskRows.length > 0) {
           const { error: upErr } = await supabase

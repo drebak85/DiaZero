@@ -1172,3 +1172,134 @@ header {
   box-shadow: none;
 }
 
+.actividad-encurso {
+  border: 2px dashed #aa0000; /* rojo oscuro gótico */
+  background-color: rgba(40, 0, 0, 0.6); /* fondo rojo oscuro semitransparente */
+  color: #f5f0e1; /* tono pergamino */
+  font-family: 'Cinzel', serif;
+  box-shadow: 0 0 10px rgba(170, 0, 0, 0.7); /* brillo rojo alrededor */
+  animation: pulso-encurso 1.5s infinite;
+}
+
+@keyframes pulso-encurso {
+  0%   { box-shadow: 0 0 5px rgba(170, 0, 0, 0.4); }
+  50%  { box-shadow: 0 0 15px rgba(170, 0, 0, 0.8); }
+  100% { box-shadow: 0 0 5px rgba(170, 0, 0, 0.4); }
+}
+
+/* Estado URGENTE: < 24h */
+/* Fuente monoespaciada recomendada (opcional): */
+/* @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700&display=swap'); */
+
+.cita-tiempo-restante {
+  display: inline-block;
+  padding: 4px 10px;
+  line-height: 1;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  letter-spacing: 1px;
+}
+
+/* URGENTE: < 24h  — números huecos con neón frío */
+.cita-item.urgente .cita-tiempo-restante,
+.cita-main-content.urgente .cita-tiempo-restante {
+  font-size: clamp(1.15rem, 3.6vw, 2rem);
+  font-weight: 900;
+  color: transparent;                     /* hueco */
+  -webkit-text-stroke: 2px #00e5ff;       /* contorno cian */
+  text-shadow: 0 0 10px rgba(0, 229, 255, .6);
+  position: relative;
+}
+
+/* Línea de escaneo bajo el texto */
+.cita-item.urgente .cita-tiempo-restante::after,
+.cita-main-content.urgente .cita-tiempo-restante::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  bottom: -6px;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, rgba(0,229,255,.9), transparent);
+  filter: drop-shadow(0 0 6px rgba(0,229,255,.8));
+  animation: scanline 1.8s linear infinite;
+}
+
+@keyframes scanline {
+  0%   { transform: translateX(-30%); opacity: .7; }
+  50%  { opacity: 1; }
+  100% { transform: translateX(30%);  opacity: .7; }
+}
+
+/* CRÍTICA: < 1h — cambia a ámbar y vibra suave */
+.cita-item.critica .cita-tiempo-restante,
+.cita-main-content.critica .cita-tiempo-restante {
+  -webkit-text-stroke: 3px #ffb300;       /* contorno ámbar */
+  text-shadow: 0 0 12px rgba(255, 179, 0, .85);
+  font-size: clamp(1.35rem, 4.8vw, 2.4rem);
+  animation: wobble .8s ease-in-out infinite;
+}
+
+.cita-item.critica .cita-tiempo-restante::after,
+.cita-main-content.critica .cita-tiempo-restante::after {
+  background: linear-gradient(90deg, transparent, rgba(255,179,0,.95), transparent);
+  filter: drop-shadow(0 0 8px rgba(255,179,0,.9));
+}
+
+@keyframes wobble {
+  0%,100% { transform: translateY(0) }
+  50%     { transform: translateY(-1px) }
+}
+
+/* Toque sutil al contenedor cuando es urgente/critica (sin caja roja) */
+/* Quitar la sombra interior actual */
+.cita-item.urgente, .cita-main-content.urgente {
+  box-shadow: none;
+}.cita-item.critica, .cita-main-content.critica { box-shadow: inset 0 0 14px rgba(255, 179, 0, .18); }
+
+.cita-item.urgente {
+  border: 2px solid rgba(0,229,255,.6);
+  box-shadow: 0 0 12px rgba(0,229,255,.6),
+              0 0 20px rgba(0,229,255,.3);
+  border-radius: 12px;
+}
+
+/* CRÍTICA < 1h — halo exterior ámbar */
+.cita-item.critica {
+  border: 2px solid rgba(255,179,0,.8);
+  box-shadow: 0 0 14px rgba(255,179,0,.85),
+              0 0 26px rgba(255,179,0,.4);
+  border-radius: 12px;
+}
+
+.draggable-task { cursor: grab; }
+.draggable-task.dragging { opacity: .6; cursor: grabbing; }
+.drag-placeholder {
+  height: 48px;
+  margin: 6px 0;
+  border-radius: 12px;
+  outline: 2px dashed rgba(0, 229, 255, .6);
+  background: rgba(0, 229, 255, .08);
+}
+
+/* toast */
+.toast-sys {
+  position: fixed;
+  left: 50%;
+  top: 20px;
+  transform: translateX(-50%) translateY(-10px);
+  background: #121212;
+  color: #eaeaea;
+  padding: 10px 16px;
+  border-radius: 10px;
+  box-shadow: 0 4px 18px rgba(0,0,0,.35);
+  border: 1px solid rgba(0,229,255,.4);
+  opacity: 0;
+  transition: all .18s ease;
+  z-index: 9999;
+  font-weight: 700;
+  letter-spacing: .3px;
+}
+.toast-sys.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}

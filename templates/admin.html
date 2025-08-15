@@ -212,6 +212,51 @@
   </div>
 </section>
 
+<section class="main-section" id="familia">
+  <h2>Grupo familiar</h2>
+
+  <div class="section-content">
+    <div class="form-grid-2cols">
+      <div class="form-group">
+        <label>Nombre del grupo</label>
+        <input id="grp-nombre" type="text" placeholder="Ej: Familia Raúl">
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button id="grp-crear" class="btn-success">Crear grupo</button>
+      </div>
+    </div>
+
+    <hr style="opacity:.2;margin:12px 0;">
+
+    <div id="mis-grupos"></div>
+
+    <div id="panel-miembros" class="oculto" style="margin-top:12px;">
+      <h3>Miembros del grupo: <span id="nombre-grupo-actual"></span></h3>
+
+      <div class="form-grid-3cols">
+        <div class="form-group">
+          <label>Usuario (username)</label>
+          <input id="mbr-username" type="text" placeholder="p.ej. derek">
+        </div>
+        <div class="form-group">
+          <label>Rol</label>
+          <select id="mbr-rol">
+            <option value="miembro">Miembro</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>&nbsp;</label>
+          <button id="mbr-agregar" class="btn-secondary">Añadir miembro</button>
+        </div>
+      </div>
+
+      <ul id="lista-miembros"></ul>
+    </div>
+  </div>
+</section>
+
 
 
   </main>
@@ -221,6 +266,8 @@
   <script src="{{ url_for('static', filename='js/recetas.js') }}" type="module"></script>
   <script src="{{ url_for('static', filename='utils/calculos_ingredientes.js') }}" type="module"></script>
   <script src="{{ url_for('static', filename='js/add-activity.js') }}" type="module"></script>
+  <script type="module" src="{{ url_for('static', filename='js/admin-groups.js') }}"></script>
+
 
   <!-- Script NUEVO: lógica de Música (subida múltiple + parse artista/título) -->
   <script type="module">
